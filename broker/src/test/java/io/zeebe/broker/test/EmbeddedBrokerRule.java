@@ -20,6 +20,7 @@ import static io.zeebe.test.util.TestUtil.waitUntil;
 import io.atomix.core.Atomix;
 import io.zeebe.broker.Broker;
 import io.zeebe.broker.PartitionListener;
+import io.zeebe.broker.SpringBrokerBridge;
 import io.zeebe.broker.TestLoggers;
 import io.zeebe.broker.system.EmbeddedGatewayService;
 import io.zeebe.broker.system.configuration.BrokerCfg;
@@ -204,7 +205,12 @@ public final class EmbeddedBrokerRule extends ExternalResource {
       }
     }
 
-    broker = new Broker(brokerCfg, newTemporaryFolder.getAbsolutePath(), controlledActorClock);
+    broker =
+        new Broker(
+            brokerCfg,
+            newTemporaryFolder.getAbsolutePath(),
+            controlledActorClock,
+            new SpringBrokerBridge());
 
     final CountDownLatch latch = new CountDownLatch(brokerCfg.getCluster().getPartitionsCount());
     broker.addPartitionListener(new LeaderPartitionListener(latch));

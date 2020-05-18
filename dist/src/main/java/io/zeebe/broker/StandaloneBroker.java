@@ -31,6 +31,7 @@ public class StandaloneBroker implements CommandLineRunner {
 
   @Autowired BrokerCfg configuration;
   @Autowired Environment springEnvironment;
+  @Autowired SpringBrokerBridge springBrokerBridge;
 
   private final CountDownLatch waiting_latch = new CountDownLatch(1);
   private String tempFolder;
@@ -83,7 +84,7 @@ public class StandaloneBroker implements CommandLineRunner {
       basePath = Paths.get(".").toAbsolutePath().normalize().toString();
     }
 
-    return new Broker(configuration, basePath, null);
+    return new Broker(configuration, basePath, null, springBrokerBridge);
   }
 
   private Broker createBrokerInTempDirectory() {
@@ -91,7 +92,7 @@ public class StandaloneBroker implements CommandLineRunner {
 
     try {
       tempFolder = Files.createTempDirectory("zeebe").toAbsolutePath().normalize().toString();
-      return new Broker(configuration, tempFolder, null);
+      return new Broker(configuration, tempFolder, null, springBrokerBridge);
     } catch (final IOException e) {
       throw new RuntimeException("Could not start broker", e);
     }

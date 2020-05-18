@@ -15,7 +15,6 @@ import io.atomix.raft.partition.RaftPartition;
 import io.atomix.raft.partition.RaftPartitionGroup;
 import io.atomix.utils.net.Address;
 import io.prometheus.client.CollectorRegistry;
-import io.prometheus.client.hotspot.DefaultExports;
 import io.zeebe.broker.bootstrap.CloseProcess;
 import io.zeebe.broker.bootstrap.StartProcess;
 import io.zeebe.broker.clustering.atomix.AtomixFactory;
@@ -35,7 +34,6 @@ import io.zeebe.broker.system.configuration.SocketBindingCfg;
 import io.zeebe.broker.system.management.LeaderManagementRequestHandler;
 import io.zeebe.broker.system.management.deployment.PushDeploymentRequestHandler;
 import io.zeebe.broker.system.monitoring.BrokerHealthCheckService;
-import io.zeebe.broker.system.monitoring.BrokerHttpServer;
 import io.zeebe.broker.system.partitions.TypedRecordProcessorsFactory;
 import io.zeebe.broker.system.partitions.ZeebePartition;
 import io.zeebe.broker.system.partitions.impl.AtomixPartitionMessagingService;
@@ -75,7 +73,7 @@ public final class Broker implements AutoCloseable {
 
   static {
     // enable hotspot prometheus metric collection
-    DefaultExports.initialize();
+    // DefaultExports.initialize();
   }
 
   private final SystemContext brokerContext;
@@ -93,14 +91,20 @@ public final class Broker implements AutoCloseable {
   private ServerTransport serverTransport;
   private BrokerHealthCheckService healthCheckService;
   private Map<Integer, ZeebeIndexAdapter> partitionIndexes;
+  private final SpringBrokerBridge springBrokerBridge;
 
-  public Broker(final SystemContext systemContext) {
+  public Broker(final SystemContext systemContext, final SpringBrokerBridge springBrokerBridge) {
     this.brokerContext = systemContext;
     this.partitionListeners = new ArrayList<>();
+    this.springBrokerBridge = springBrokerBridge;
   }
 
-  public Broker(final BrokerCfg cfg, final String basePath, final ActorClock clock) {
-    this(new SystemContext(cfg, basePath, clock));
+  public Broker(
+      final BrokerCfg cfg,
+      final String basePath,
+      final ActorClock clock,
+      final SpringBrokerBridge springBrokerBridge) {
+    this(new SystemContext(cfg, basePath, clock), springBrokerBridge);
   }
 
   public void addPartitionListener(final PartitionListener listener) {
@@ -280,15 +284,12 @@ public final class Broker implements AutoCloseable {
   private AutoCloseable monitoringServerStep(
       final NetworkCfg networkCfg, final BrokerInfo localBroker) {
     healthCheckService = new BrokerHealthCheckService(localBroker, atomix);
+    springBrokerBridge.registerBrokerHealthCheckServiceSupplier(() -> healthCheckService);
     partitionListeners.add(healthCheckService);
     scheduleActor(healthCheckService);
 
     final SocketBindingCfg monitoringApi = networkCfg.getMonitoringApi();
-    final BrokerHttpServer httpServer =
-        new BrokerHttpServer(
-            monitoringApi.getHost(), monitoringApi.getPort(), METRICS_REGISTRY, healthCheckService);
     return () -> {
-      httpServer.close();
       healthCheckService.close();
     };
   }
