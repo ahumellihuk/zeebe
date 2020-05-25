@@ -11,7 +11,7 @@ if [[ $status != 0 ]]; then
   exit $status;
 fi
 
-if grep -q "\[INFO\]  Build failures were ignored\." test.txt; then
+if grep -q "\[INFO\] Build failures were ignored\." test.txt; then
   rm test.txt
   exit 1
 fi
