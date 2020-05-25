@@ -1,4 +1,4 @@
-#!/bin/sh -eux
+#!/bin/bash -eux
 
 
 export JAVA_TOOL_OPTIONS="$JAVA_TOOL_OPTIONS -XX:MaxRAMFraction=$((LIMITS_CPU))"
@@ -12,7 +12,7 @@ if [[ $status != 0 ]]; then
   exit $status;
 fi
 
-if grep -q "There are test failures\." test.txt; then
+if grep -q "\[INFO\]  Build failures were ignored\." test.txt; then
   rm test.txt
   exit 1
 fi
