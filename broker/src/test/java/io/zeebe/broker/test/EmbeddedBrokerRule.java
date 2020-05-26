@@ -68,6 +68,7 @@ public final class EmbeddedBrokerRule extends ExternalResource {
   protected BrokerCfg brokerCfg;
   protected Broker broker;
   protected final ControlledActorClock controlledActorClock = new ControlledActorClock();
+  protected final SpringBrokerBridge springBrokerBridge = new SpringBrokerBridge();
   protected long startTime;
   private File newTemporaryFolder;
   private List<String> dataDirectories;
@@ -160,6 +161,10 @@ public final class EmbeddedBrokerRule extends ExternalResource {
     return brokerCfg;
   }
 
+  public SpringBrokerBridge getSpringBrokerBridge() {
+    return springBrokerBridge;
+  }
+
   public Atomix getAtomix() {
     return broker.getAtomix();
   }
@@ -210,7 +215,7 @@ public final class EmbeddedBrokerRule extends ExternalResource {
             brokerCfg,
             newTemporaryFolder.getAbsolutePath(),
             controlledActorClock,
-            new SpringBrokerBridge());
+            springBrokerBridge);
 
     final CountDownLatch latch = new CountDownLatch(brokerCfg.getCluster().getPartitionsCount());
     broker.addPartitionListener(new LeaderPartitionListener(latch));

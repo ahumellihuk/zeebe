@@ -71,11 +71,6 @@ public final class Broker implements AutoCloseable {
 
   private static final CollectorRegistry METRICS_REGISTRY = CollectorRegistry.defaultRegistry;
 
-  static {
-    // enable hotspot prometheus metric collection
-    // DefaultExports.initialize();
-  }
-
   private final SystemContext brokerContext;
   private final List<PartitionListener> partitionListeners;
   private boolean isClosed = false;
