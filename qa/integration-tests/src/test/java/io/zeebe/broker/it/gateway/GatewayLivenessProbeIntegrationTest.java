@@ -48,6 +48,9 @@ public class GatewayLivenessProbeIntegrationTest {
     // start both containers
     Stream.of(gateway, broker).parallel().forEach(Startable::start);
 
+    // wait a little while to give the broker and gateway a chance to find each other
+    Thread.sleep(10000);
+
     final Integer actuatorPort = gateway.getMappedPort(MONITORING_PORT_IN_CONTAINER);
     final String containerIPAddress = gateway.getContainerIpAddress();
 
