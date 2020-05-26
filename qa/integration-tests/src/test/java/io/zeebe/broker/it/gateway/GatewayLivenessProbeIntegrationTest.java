@@ -23,8 +23,8 @@ import org.testcontainers.lifecycle.Startable;
 
 public class GatewayLivenessProbeIntegrationTest {
 
-  public static final int ACTUATOR_PORT_IN_CONTAINER = 8080;
-  public static final String PATH_LIVENESS_PROBE = "/actuator/health/liveness";
+  public static final int MONITORING_PORT_IN_CONTAINER = 9600;
+  public static final String PATH_LIVENESS_PROBE = "/live";
 
   @Test
   public void shouldReportLivenessUpIfConnectedToBroker() throws InterruptedException {
@@ -37,7 +37,8 @@ public class GatewayLivenessProbeIntegrationTest {
         new ZeebeStandaloneGatewayContainer("current-test")
             .withNetwork(broker.getNetwork())
             .withClusterName("zeebe-cluster")
-            .withExposedPorts(8080); // make sure they are on the same network
+            .withExposedPorts(
+                MONITORING_PORT_IN_CONTAINER); // make sure they are on the same network
     // configure broker so it doesn't start an embedded gateway
     broker.withEmbeddedGateway(false).withHost("zeebe-0");
     gateway
@@ -47,7 +48,7 @@ public class GatewayLivenessProbeIntegrationTest {
     // start both containers
     Stream.of(gateway, broker).parallel().forEach(Startable::start);
 
-    final Integer actuatorPort = gateway.getMappedPort(ACTUATOR_PORT_IN_CONTAINER);
+    final Integer actuatorPort = gateway.getMappedPort(MONITORING_PORT_IN_CONTAINER);
     final String containerIPAddress = gateway.getContainerIpAddress();
 
     final RequestSpecification gatewayServerSpec =
@@ -70,10 +71,11 @@ public class GatewayLivenessProbeIntegrationTest {
   public void shouldReportLivenessDownIfNotConnectedToBroker() throws InterruptedException {
     // --- given ---------------------------------------
     final ZeebeStandaloneGatewayContainer gateway =
-        new ZeebeStandaloneGatewayContainer("current-test").withExposedPorts(8080);
+        new ZeebeStandaloneGatewayContainer("current-test")
+            .withExposedPorts(MONITORING_PORT_IN_CONTAINER);
     gateway.start();
 
-    final Integer actuatorPort = gateway.getMappedPort(ACTUATOR_PORT_IN_CONTAINER);
+    final Integer actuatorPort = gateway.getMappedPort(MONITORING_PORT_IN_CONTAINER);
     final String containerIPAddress = gateway.getContainerIpAddress();
 
     final RequestSpecification gatewayServerSpec =

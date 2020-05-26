@@ -5,12 +5,12 @@
  * Licensed under the Zeebe Community License 1.0. You may not use this file
  * except in compliance with the Zeebe Community License 1.0.
  */
-package io.zeebe.broker;
+package io.zeebe.gateway;
 
 import static java.net.InetAddress.getByName;
 
 import io.prometheus.client.CollectorRegistry;
-import io.zeebe.broker.system.configuration.BrokerCfg;
+import io.zeebe.gateway.impl.configuration.GatewayCfg;
 import io.zeebe.util.exception.UncheckedExecutionException;
 import java.net.UnknownHostException;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,18 +24,18 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.stereotype.Component;
 
 @Component
-public class BrokerSpringServerCustomizer
+public class GatewaySpringServerCustomizer
     implements WebServerFactoryCustomizer<ConfigurableServletWebServerFactory> {
 
-  @Autowired BrokerCfg brokerCfg;
+  @Autowired GatewayCfg gatewayCfg;
 
   @Override
   public void customize(ConfigurableServletWebServerFactory server) {
-    final var networkCfg = brokerCfg.getNetwork();
-    // trigger application of defaults so that the monitoring config no longer has null values
-    networkCfg.applyDefaults();
-
-    final var monitoringApiCfg = networkCfg.getMonitoringApi();
+    if (!gatewayCfg.isInitialized()) {
+      // trigger application of defaults so that the monitoring config no longer has null values
+      gatewayCfg.init();
+    }
+    final var monitoringApiCfg = gatewayCfg.getMonitoring();
 
     try {
       server.setAddress(getByName(monitoringApiCfg.getHost()));

@@ -7,7 +7,6 @@
  */
 package io.zeebe.broker.system.monitoring;
 
-import io.prometheus.client.CollectorRegistry;
 import io.zeebe.broker.SpringBrokerBridge;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -23,7 +22,6 @@ public class MonitoringRestController {
   private static final String METRICS_URI = "/metrics";
   private static final String BROKER_HEALTH_STATUS_URI = "/health";
 
-  @Autowired private CollectorRegistry metricsRegistry;
   @Autowired private SpringBrokerBridge springBrokerBridge;
 
   @GetMapping(value = METRICS_URI)
