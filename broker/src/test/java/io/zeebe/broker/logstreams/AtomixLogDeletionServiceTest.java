@@ -88,13 +88,13 @@ public final class AtomixLogDeletionServiceTest {
     final var reader = logStorageRule.getRaftLog().openReader(-1);
 
     // when
-    logStorageRule.appendEntry(1, 1, DATA).index();
-    logStorageRule.appendEntry(2, 2, DATA).index();
-    logStorageRule.appendEntry(3, 3, DATA).index();
+    logStorageRule.appendEntry(DATA).index();
+    logStorageRule.appendEntry(DATA).index();
+    logStorageRule.appendEntry(DATA).index();
     createSnapshot(2);
 
     // then
-    compactor.awaitCompaction(2L, Duration.ofSeconds(5));
+    compactor.awaitCompaction(2, Duration.ofSeconds(5));
     reader.reset();
     final var entries = readAllEntries(reader);
     assertThat(entries).isNotEmpty().hasSize(2).extracting(Indexed::index).containsExactly(2L, 3L);
@@ -106,9 +106,9 @@ public final class AtomixLogDeletionServiceTest {
     final var reader = logStorageRule.getRaftLog().openReader(-1);
 
     // when
-    logStorageRule.appendEntry(1, 1, DATA).index();
-    logStorageRule.appendEntry(2, 2, DATA).index();
-    logStorageRule.appendEntry(3, 3, DATA).index();
+    logStorageRule.appendEntry(DATA).index();
+    logStorageRule.appendEntry(DATA).index();
+    logStorageRule.appendEntry(DATA).index();
     createSnapshot(0);
 
     // then
@@ -128,9 +128,9 @@ public final class AtomixLogDeletionServiceTest {
     final var reader = logStorageRule.getRaftLog().openReader(-1);
 
     // when
-    logStorageRule.appendEntry(1, 1, DATA).index();
-    logStorageRule.appendEntry(2, 2, DATA).index();
-    logStorageRule.appendEntry(3, 3, DATA).index();
+    logStorageRule.appendEntry(DATA).index();
+    logStorageRule.appendEntry(DATA).index();
+    logStorageRule.appendEntry(DATA).index();
     createSnapshot(5L);
 
     // then - expect exactly one segment left with entry 3

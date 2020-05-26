@@ -7,6 +7,7 @@
  */
 package io.zeebe.logstreams.spi;
 
+import io.atomix.raft.zeebe.ZeebeEntry;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
@@ -57,8 +58,7 @@ public interface LogStorage {
    * @param highestPosition the highest record position of all records in the block buffer
    * @param blockBuffer the buffer containing a block of log entries to be written into storage
    */
-  void append(
-      long lowestPosition, long highestPosition, ByteBuffer blockBuffer, AppendListener listener);
+  void append(ByteBuffer blockBuffer, AppendListener listener);
 
   /**
    * Open the storage. Called in the log conductor thread.
@@ -118,5 +118,7 @@ public interface LogStorage {
      * @param error the error that occurred
      */
     void onCommitError(long address, Throwable error);
+
+    void updateRecords(ZeebeEntry entry, long index) throws IllegalStateException;
   }
 }

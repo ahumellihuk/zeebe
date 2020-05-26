@@ -11,14 +11,19 @@ import static io.zeebe.dispatcher.impl.log.DataFrameDescriptor.HEADER_LENGTH;
 import static io.zeebe.dispatcher.impl.log.DataFrameDescriptor.lengthOffset;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.atomix.raft.zeebe.ZeebeEntry;
 import io.zeebe.dispatcher.ClaimedFragment;
+import io.zeebe.util.TriConsumer;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiConsumer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.Before;
 import org.junit.Test;
 
 public final class ClaimedFragmentTest {
   private static final Runnable DO_NOTHING = () -> {};
+  private static final BiConsumer<Long, TriConsumer<ZeebeEntry, Long, Integer>> ADD_NOTHING =
+      (a, b) -> {};
 
   private static final int A_FRAGMENT_LENGTH = 1024;
   UnsafeBuffer underlyingBuffer;
@@ -34,10 +39,11 @@ public final class ClaimedFragmentTest {
   public void shouldCommit() {
     // given
     final AtomicBoolean isSet = new AtomicBoolean(false);
-    claimedFragment.wrap(underlyingBuffer, 0, A_FRAGMENT_LENGTH, () -> isSet.set(true));
+    claimedFragment.wrap(
+        underlyingBuffer, 0, A_FRAGMENT_LENGTH, () -> isSet.set(true), (a, b) -> {});
 
     // if
-    claimedFragment.commit();
+    claimedFragment.commit(0, (a, b, c) -> {});
 
     // then
     assertThat(underlyingBuffer.getInt(lengthOffset(0))).isEqualTo(A_FRAGMENT_LENGTH);
@@ -49,7 +55,7 @@ public final class ClaimedFragmentTest {
   @Test
   public void shouldReturnOffsetAndLength() {
     // if
-    claimedFragment.wrap(underlyingBuffer, 0, A_FRAGMENT_LENGTH, DO_NOTHING);
+    claimedFragment.wrap(underlyingBuffer, 0, A_FRAGMENT_LENGTH, DO_NOTHING, ADD_NOTHING);
 
     // then
     assertThat(claimedFragment.getOffset()).isEqualTo(HEADER_LENGTH);

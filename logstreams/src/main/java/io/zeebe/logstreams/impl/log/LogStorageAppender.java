@@ -7,10 +7,15 @@
  */
 package io.zeebe.logstreams.impl.log;
 
+import static io.zeebe.dispatcher.impl.log.DataFrameDescriptor.flagsOffset;
+import static io.zeebe.dispatcher.impl.log.DataFrameDescriptor.lengthOffset;
+
 import com.netflix.concurrency.limits.limit.AbstractLimit;
 import com.netflix.concurrency.limits.limit.WindowedLimit;
+import io.atomix.raft.zeebe.ZeebeEntry;
 import io.zeebe.dispatcher.BlockPeek;
 import io.zeebe.dispatcher.Subscription;
+import io.zeebe.dispatcher.impl.log.DataFrameDescriptor;
 import io.zeebe.logstreams.impl.Loggers;
 import io.zeebe.logstreams.impl.backpressure.AlgorithmCfg;
 import io.zeebe.logstreams.impl.backpressure.AppendBackpressureMetrics;
@@ -23,6 +28,7 @@ import io.zeebe.logstreams.impl.backpressure.NoopAppendLimiter;
 import io.zeebe.logstreams.spi.LogStorage;
 import io.zeebe.logstreams.spi.LogStorage.AppendListener;
 import io.zeebe.util.Environment;
+import io.zeebe.util.TriConsumer;
 import io.zeebe.util.health.FailureListener;
 import io.zeebe.util.health.HealthMonitorable;
 import io.zeebe.util.health.HealthStatus;
@@ -32,6 +38,7 @@ import io.zeebe.util.sched.future.CompletableActorFuture;
 import java.nio.ByteBuffer;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Queue;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.slf4j.Logger;
 
@@ -49,7 +56,6 @@ public final class LogStorageAppender extends Actor implements HealthMonitorable
   private final AppendLimiter appendEntryLimiter;
   private final AppendBackpressureMetrics appendBackpressureMetrics;
   private final Environment env;
-  private final LoggedEventImpl positionReader = new LoggedEventImpl();
   private FailureListener failureListener;
   private final ActorFuture<Void> closeFuture;
 
@@ -106,27 +112,14 @@ public final class LogStorageAppender extends Actor implements HealthMonitorable
     final ByteBuffer rawBuffer = blockPeek.getRawBuffer();
     final int bytes = rawBuffer.remaining();
     final ByteBuffer copiedBuffer = ByteBuffer.allocate(bytes).put(rawBuffer).flip();
-    final Positions positions = readPositions(copiedBuffer);
 
-    // Commit position is the position of the last event.
-    appendBackpressureMetrics.newEntryToAppend();
-    if (appendEntryLimiter.tryAcquire(positions.highest)) {
-      final var listener = new Listener(positions);
-      appendToStorage(copiedBuffer, positions, listener);
-      blockPeek.markCompleted();
-    } else {
-      appendBackpressureMetrics.deferred();
-      LOG.trace(
-          "Backpressure happens: in flight {} limit {}",
-          appendEntryLimiter.getInflight(),
-          appendEntryLimiter.getLimit());
-      // we will be called later again
-    }
+    final var listener = new Listener(blockPeek.getHandlers(), blockPeek.getBlockLength());
+    appendToStorage(copiedBuffer, listener);
+    blockPeek.markCompleted();
   }
 
-  private void appendToStorage(
-      final ByteBuffer buffer, final Positions positions, final Listener listener) {
-    logStorage.append(positions.lowest, positions.highest, buffer, listener);
+  private void appendToStorage(final ByteBuffer buffer, final Listener listener) {
+    logStorage.append(buffer, listener);
   }
 
   @Override
@@ -172,19 +165,6 @@ public final class LogStorageAppender extends Actor implements HealthMonitorable
     }
   }
 
-  private Positions readPositions(final ByteBuffer buffer) {
-    final var view = new UnsafeBuffer(buffer);
-    final var positions = new Positions();
-    var offset = 0;
-    do {
-      positionReader.wrap(view, offset);
-      positions.accept(positionReader.getPosition());
-      offset += positionReader.getLength();
-    } while (offset < view.capacity());
-
-    return positions;
-  }
-
   @Override
   public HealthStatus getHealthStatus() {
     return actor.isClosed() ? HealthStatus.UNHEALTHY : HealthStatus.HEALTHY;
@@ -203,21 +183,15 @@ public final class LogStorageAppender extends Actor implements HealthMonitorable
     }
   }
 
-  private static final class Positions {
-    private long lowest = Long.MAX_VALUE;
-    private long highest = Long.MIN_VALUE;
-
-    private void accept(final long position) {
-      lowest = Math.min(lowest, position);
-      highest = Math.max(highest, position);
-    }
-  }
-
   private final class Listener implements AppendListener {
-    private final Positions positions;
 
-    private Listener(final Positions positions) {
-      this.positions = positions;
+    private final Queue<TriConsumer<ZeebeEntry, Long, Integer>> handlers;
+    private final int blockLength;
+
+    private Listener(
+        final Queue<TriConsumer<ZeebeEntry, Long, Integer>> handlers, final int blockLength) {
+      this.handlers = handlers;
+      this.blockLength = blockLength;
     }
 
     @Override
@@ -225,7 +199,7 @@ public final class LogStorageAppender extends Actor implements HealthMonitorable
 
     @Override
     public void onWriteError(final Throwable error) {
-      LOG.error("Failed to append block with last event position {}.", positions.highest, error);
+      LOG.error("Failed to append block.", error);
       if (error instanceof NoSuchElementException) {
         // Not a failure. It is probably during transition to follower.
         return;
@@ -240,13 +214,64 @@ public final class LogStorageAppender extends Actor implements HealthMonitorable
 
     @Override
     public void onCommitError(final long address, final Throwable error) {
-      LOG.error("Failed to commit block with last event position {}.", positions.highest, error);
+      LOG.error("Failed to commit block.", error);
       releaseBackPressure();
       actor.run(() -> onFailure(error));
     }
 
+    @Override
+    public void updateRecords(final ZeebeEntry entry, final long index) {
+      final UnsafeBuffer block = new UnsafeBuffer(entry.data());
+      int fragOffset = 0;
+      int recordIndex = 0;
+      boolean inBatch = false;
+
+      while (fragOffset < blockLength) {
+        final long position = (index << 8) + recordIndex;
+        final byte flags = block.getByte(flagsOffset(fragOffset));
+
+        if (inBatch) {
+          if (DataFrameDescriptor.flagBatchEnd(flags)) {
+            inBatch = false;
+          }
+        } else {
+          inBatch = DataFrameDescriptor.flagBatchBegin(flags);
+        }
+
+        if (inBatch) {
+          updateRecords(handlers.peek(), entry, position, fragOffset);
+        } else {
+          updateRecords(handlers.poll(), entry, position, fragOffset);
+        }
+        recordIndex++;
+        fragOffset += DataFrameDescriptor.alignedLength(block.getInt(lengthOffset(fragOffset)));
+
+        if (recordIndex > 0xFF) {
+          throw new IllegalStateException(
+              String.format(
+                  "The number of records in the entry with index %d exceeds the supported amount of %d",
+                  index, 0xFF));
+        }
+      }
+
+      entry.setLowestPosition(index << 8);
+      entry.setHighestPosition((index << 8) + (recordIndex - 1));
+    }
+
+    private void updateRecords(
+        final TriConsumer<ZeebeEntry, Long, Integer> handler,
+        final ZeebeEntry entry,
+        final long position,
+        final int fragOffset) {
+      if (handler == null) {
+        throw new IllegalStateException("Expected to have handler for entry but none was found.");
+      }
+
+      handler.accept(entry, position, fragOffset);
+    }
+
     private void releaseBackPressure() {
-      actor.run(() -> appendEntryLimiter.onCommit(positions.highest));
+      //      actor.run(() -> appendEntryLimiter.onCommit(positions.highest));
     }
   }
 }

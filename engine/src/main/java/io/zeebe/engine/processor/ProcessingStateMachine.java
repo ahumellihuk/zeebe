@@ -29,6 +29,8 @@ import io.zeebe.util.sched.ActorControl;
 import io.zeebe.util.sched.clock.ActorClock;
 import io.zeebe.util.sched.future.ActorFuture;
 import java.time.Duration;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
@@ -344,11 +346,19 @@ public final class ProcessingStateMachine {
   }
 
   private void writeEvent() {
+    final AtomicReference<ActorFuture<Long>> future = new AtomicReference<>();
+
     final ActorFuture<Boolean> retryFuture =
         writeRetryStrategy.runWithRetry(
             () -> {
-              writtenEventPosition = logStreamWriter.flush();
-              return writtenEventPosition >= 0;
+              final Optional<ActorFuture<Long>> optFuture = logStreamWriter.flush();
+              if (optFuture.isEmpty()) {
+                writtenEventPosition = -1L;
+                return false;
+              }
+
+              future.set(optFuture.get());
+              return true;
             },
             abortCondition);
 
@@ -359,8 +369,17 @@ public final class ProcessingStateMachine {
             LOG.error(ERROR_MESSAGE_WRITE_EVENT_ABORTED, currentEvent, t);
             onError(t, this::writeEvent);
           } else {
-            updateState();
-            metrics.eventWritten();
+            actor.runOnCompletion(
+                future.get(),
+                (pos, t1) -> {
+                  if (t1 != null) {
+                    LOG.error(ERROR_MESSAGE_WRITE_EVENT_ABORTED, currentEvent, t1);
+                    onError(t1, this::writeEvent);
+                  } else {
+                    updateState();
+                    metrics.eventWritten();
+                  }
+                });
           }
         });
   }
