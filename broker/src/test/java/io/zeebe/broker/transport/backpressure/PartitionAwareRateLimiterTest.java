@@ -11,6 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.netflix.concurrency.limits.Limit;
 import com.netflix.concurrency.limits.limit.SettableLimit;
+import io.zeebe.broker.system.configuration.BackpressureCfg;
 import io.zeebe.protocol.record.intent.Intent;
 import io.zeebe.protocol.record.intent.WorkflowInstanceCreationIntent;
 import java.util.function.Supplier;
@@ -28,11 +29,22 @@ public final class PartitionAwareRateLimiterTest {
 
   @Before
   public void setUp() {
-    IntStream.range(0, PARTITIONS).forEach(i -> partitionedLimiter.addPartition(i));
+    IntStream.range(0, PARTITIONS).forEach(partitionedLimiter::addPartition);
   }
 
   @Test
   public void shouldPartitionsHaveItsOwnLimiter() {
+    // given
+    final var backpressureConfig = new BackpressureCfg();
+    backpressureConfig.setAlgorithm("fixed");
+    backpressureConfig.getFixedLimit().setLimit(1);
+
+    // when
+    final PartitionAwareRequestLimiter partitionedLimiter =
+        io.zeebe.broker.transport.backpressure.PartitionAwareRequestLimiter.newLimiter(
+            backpressureConfig);
+
+    // then
     IntStream.range(0, PARTITIONS)
         .forEach(i -> assertThat(partitionedLimiter.tryAcquire(i, 0, 1, context)).isTrue());
   }

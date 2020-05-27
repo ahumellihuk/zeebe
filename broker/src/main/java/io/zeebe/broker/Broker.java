@@ -242,9 +242,7 @@ public final class Broker implements AutoCloseable {
     final BackpressureCfg backpressure = brokerCfg.getBackpressure();
     PartitionAwareRequestLimiter limiter = PartitionAwareRequestLimiter.newNoopLimiter();
     if (backpressure.isEnabled()) {
-      limiter =
-          PartitionAwareRequestLimiter.newLimiter(
-              backpressure.getAlgorithm(), backpressure.useWindowed());
+      limiter = PartitionAwareRequestLimiter.newLimiter(backpressure);
     }
 
     commandHandler = new CommandApiService(serverTransport, localBroker, limiter);

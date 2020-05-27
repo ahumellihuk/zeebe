@@ -481,6 +481,42 @@ public final class BrokerCfgTest {
   }
 
   @Test
+  public void shouldUseConfiguredBackpressureAlgorithms() {
+
+    final BackpressureCfg backpressure = new BackpressureCfg();
+
+    // when
+    backpressure.setAlgorithm("gradient");
+    // then;
+    assertThat(backpressure.getAlgorithm()).isEqualTo(LimitAlgorithm.GRADIENT);
+
+    // when
+    backpressure.setAlgorithm("gradient");
+    // then;
+    assertThat(backpressure.getAlgorithm()).isEqualTo(LimitAlgorithm.GRADIENT);
+
+    // when
+    backpressure.setAlgorithm("gradient2");
+    // then;
+    assertThat(backpressure.getAlgorithm()).isEqualTo(LimitAlgorithm.GRADIENT2);
+
+    // when
+    backpressure.setAlgorithm("vegas");
+    // then;
+    assertThat(backpressure.getAlgorithm()).isEqualTo(LimitAlgorithm.VEGAS);
+
+    // when
+    backpressure.setAlgorithm("fixed");
+    // then;
+    assertThat(backpressure.getAlgorithm()).isEqualTo(LimitAlgorithm.FIXED);
+
+    // when
+    backpressure.setAlgorithm("aimd");
+    // then;
+    assertThat(backpressure.getAlgorithm()).isEqualTo(LimitAlgorithm.AIMD);
+  }
+
+  @Test
   public void shouldUseDefaultAdvertisedHost() {
     // when - then
     assertAdvertisedAddress(
