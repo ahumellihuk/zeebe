@@ -16,6 +16,7 @@ import io.zeebe.engine.processor.workflow.ExpressionProcessor.EvaluationExceptio
 import io.zeebe.engine.processor.workflow.deployment.model.element.ExecutableActivity;
 import io.zeebe.engine.processor.workflow.deployment.model.element.ExecutableBoundaryEvent;
 import io.zeebe.engine.processor.workflow.deployment.model.element.ExecutableCatchEventSupplier;
+import io.zeebe.engine.processor.workflow.deployment.model.element.ExecutableReceiveTask;
 import io.zeebe.engine.processor.workflow.message.MessageCorrelationKeyException;
 import io.zeebe.engine.state.ZeebeState;
 import io.zeebe.engine.state.deployment.DeployedWorkflow;
@@ -66,6 +67,23 @@ public final class BpmnEventSubscriptionBehavior {
     eventScopeInstanceState = workflowState.getEventScopeInstanceState();
     elementInstanceState = workflowState.getElementInstanceState();
     keyGenerator = zeebeState.getKeyGenerator();
+  }
+
+  public void triggerIntermediateEvent(final BpmnElementContext context) {
+    final var eventTrigger =
+        eventScopeInstanceState.peekEventTrigger(context.getElementInstanceKey());
+
+    if (eventTrigger == null) {
+      // the activity (i.e. its event scope) is left - discard the event
+      return;
+    }
+
+    stateBehavior
+        .getVariablesState()
+        .setTemporaryVariables(context.getElementInstanceKey(), eventTrigger.getVariables());
+
+    eventScopeInstanceState.deleteTrigger(
+        context.getElementInstanceKey(), eventTrigger.getEventKey());
   }
 
   public <T extends ExecutableActivity> void triggerBoundaryEvent(
@@ -274,5 +292,17 @@ public final class BpmnEventSubscriptionBehavior {
     return elementInstance.getNumberOfActiveTokens() == 2
         && elementInstance.isInterrupted()
         && elementInstance.isActive();
+  }
+
+  public boolean hasBoundaryEventOccurred(
+      final ExecutableReceiveTask element, final BpmnElementContext context) {
+    final var eventTrigger =
+        eventScopeInstanceState.peekEventTrigger(context.getElementInstanceKey());
+    if (eventTrigger == null) {
+      // no event trigger found, so we can act as if no boundary event occurred
+      return false;
+    }
+    return element.getBoundaryEvents().stream()
+        .anyMatch(boundaryEvent -> boundaryEvent.getId().equals(eventTrigger.getElementId()));
   }
 }
