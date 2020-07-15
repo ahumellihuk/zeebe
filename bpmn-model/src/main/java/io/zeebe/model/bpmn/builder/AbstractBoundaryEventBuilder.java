@@ -25,6 +25,7 @@ import io.zeebe.model.bpmn.instance.bpmndi.BpmnEdge;
 import io.zeebe.model.bpmn.instance.bpmndi.BpmnShape;
 import io.zeebe.model.bpmn.instance.dc.Bounds;
 import io.zeebe.model.bpmn.instance.di.Waypoint;
+import java.util.function.Supplier;
 
 /** @author Sebastian Menski */
 public abstract class AbstractBoundaryEventBuilder<B extends AbstractBoundaryEventBuilder<B>>
@@ -129,8 +130,7 @@ public abstract class AbstractBoundaryEventBuilder<B extends AbstractBoundaryEve
   }
 
   @Override
-  protected void setCoordinates(final BpmnShape shape) {
-    final BpmnShape source = findBpmnShape(element);
+  protected void defaultTransformCoordinates(BpmnShape source, BpmnShape shape) {
     final Bounds shapeBounds = shape.getBounds();
 
     double x = 0;
@@ -145,8 +145,8 @@ public abstract class AbstractBoundaryEventBuilder<B extends AbstractBoundaryEve
       final double sourceHeight = sourceBounds.getHeight();
       final double targetHeight = shapeBounds.getHeight();
 
-      x = sourceX + sourceWidth + SPACE / 4;
-      y = sourceY + sourceHeight - targetHeight / 2 + SPACE;
+      x = sourceX + sourceWidth + defaultSpace / 8;
+      y = sourceY + sourceHeight - targetHeight / 2 + defaultSpace / 2;
     }
 
     shapeBounds.setX(x);
@@ -154,39 +154,38 @@ public abstract class AbstractBoundaryEventBuilder<B extends AbstractBoundaryEve
   }
 
   @Override
-  protected void setWaypointsWithSourceAndTarget(
-      final BpmnEdge edge, final FlowNode edgeSource, final FlowNode edgeTarget) {
-    final BpmnShape source = findBpmnShape(edgeSource);
-    final BpmnShape target = findBpmnShape(edgeTarget);
+  protected void defaultWaypointEdgeBuilder(
+      final BpmnEdge edge,
+      FlowNode edgeSource,
+      Supplier<Waypoint> waypointSupplier,
+      BpmnShape source,
+      BpmnShape target) {
+    final Bounds sourceBounds = source.getBounds();
+    final Bounds targetBounds = target.getBounds();
 
-    if (source != null && target != null) {
-      final Bounds sourceBounds = source.getBounds();
-      final Bounds targetBounds = target.getBounds();
+    final double sourceX = sourceBounds.getX();
+    final double sourceY = sourceBounds.getY();
+    final double sourceWidth = sourceBounds.getWidth();
+    final double sourceHeight = sourceBounds.getHeight();
 
-      final double sourceX = sourceBounds.getX();
-      final double sourceY = sourceBounds.getY();
-      final double sourceWidth = sourceBounds.getWidth();
-      final double sourceHeight = sourceBounds.getHeight();
+    final double targetX = targetBounds.getX();
+    final double targetY = targetBounds.getY();
+    final double targetHeight = targetBounds.getHeight();
 
-      final double targetX = targetBounds.getX();
-      final double targetY = targetBounds.getY();
-      final double targetHeight = targetBounds.getHeight();
+    final Waypoint w1 = waypointSupplier.get();
+    w1.setX(sourceX + sourceWidth / 2);
+    w1.setY(sourceY + sourceHeight);
 
-      final Waypoint w1 = createInstance(Waypoint.class);
-      w1.setX(sourceX + sourceWidth / 2);
-      w1.setY(sourceY + sourceHeight);
+    final Waypoint w2 = waypointSupplier.get();
+    w2.setX(sourceX + sourceWidth / 2);
+    w2.setY(sourceY + sourceHeight + defaultSpace / 4);
 
-      final Waypoint w2 = createInstance(Waypoint.class);
-      w2.setX(sourceX + sourceWidth / 2);
-      w2.setY(sourceY + sourceHeight + SPACE);
+    final Waypoint w3 = waypointSupplier.get();
+    w3.setX(targetX);
+    w3.setY(targetY + targetHeight / 2);
 
-      final Waypoint w3 = createInstance(Waypoint.class);
-      w3.setX(targetX);
-      w3.setY(targetY + targetHeight / 2);
-
-      edge.addChildElement(w1);
-      edge.addChildElement(w2);
-      edge.addChildElement(w3);
-    }
+    edge.addChildElement(w1);
+    edge.addChildElement(w2);
+    edge.addChildElement(w3);
   }
 }

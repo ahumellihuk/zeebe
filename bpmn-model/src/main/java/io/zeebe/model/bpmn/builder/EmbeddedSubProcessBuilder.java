@@ -16,7 +16,7 @@
 
 package io.zeebe.model.bpmn.builder;
 
-import static io.zeebe.model.bpmn.builder.AbstractBaseElementBuilder.SPACE;
+import static io.zeebe.model.bpmn.builder.AbstractBaseElementBuilder.defaultSpace;
 
 import io.zeebe.model.bpmn.instance.StartEvent;
 import io.zeebe.model.bpmn.instance.SubProcess;
@@ -53,7 +53,7 @@ public class EmbeddedSubProcessBuilder
       final double subProcessHeight = subProcessBounds.getHeight();
       final double startHeight = startBounds.getHeight();
 
-      startBounds.setX(subProcessX + SPACE);
+      startBounds.setX(subProcessX + defaultSpace);
       startBounds.setY(subProcessY + subProcessHeight / 2 - startHeight / 2);
     }
 
