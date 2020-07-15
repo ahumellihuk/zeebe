@@ -50,7 +50,7 @@ public class AbstractEventSubProcessBuilder<B extends AbstractEventSubProcessBui
       final double subProcessHeight = subProcessBounds.getHeight();
       final double startHeight = startBounds.getHeight();
 
-      startBounds.setX(subProcessX + SPACE);
+      startBounds.setX(subProcessX + defaultSpace);
       startBounds.setY(subProcessY + subProcessHeight / 2 - startHeight / 2);
     }
 

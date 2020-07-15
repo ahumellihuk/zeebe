@@ -47,7 +47,9 @@ import io.zeebe.model.bpmn.instance.dc.Bounds;
 import io.zeebe.model.bpmn.instance.di.Waypoint;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import org.camunda.bpm.model.xml.instance.ModelElementInstance;
 
 /** @author Sebastian Menski */
@@ -55,10 +57,14 @@ public abstract class AbstractBaseElementBuilder<
         B extends AbstractBaseElementBuilder<B, E>, E extends BaseElement>
     extends AbstractBpmnModelElementBuilder<B, E> {
 
-  public static final double SPACE = 50;
+  public static double defaultSpace = 300;
 
   private static final String ZEEBE_EXPRESSION_PREFIX = "=";
   public static final String ZEEBE_EXPRESSION_FORMAT = ZEEBE_EXPRESSION_PREFIX + "%s";
+
+  private BiConsumer<BpmnShape, Bounds> bpmnShapeTransformer;
+  private BiConsumer<BpmnShape, BpmnShape> coordinatesTransformer;
+  private WaypointEdgeBuilder waypointEdgeBuilder;
 
   protected AbstractBaseElementBuilder(
       final BpmnModelInstance modelInstance, final E element, final Class<?> selfType) {
@@ -316,33 +322,54 @@ public abstract class AbstractBaseElementBuilder<
     }
   }
 
+  public B withBpmnShapeTransformer(BiConsumer<BpmnShape, Bounds> bpmnShapeTransformer) {
+    this.bpmnShapeTransformer = bpmnShapeTransformer;
+    return myself;
+  }
+
   public BpmnShape createBpmnShape(final FlowNode node) {
+    if (bpmnShapeTransformer != null) {
+      final BpmnShape bpmnShape = createBpmnShape(node, bpmnShapeTransformer);
+      bpmnShapeTransformer = null;
+      return bpmnShape;
+    }
+    return createBpmnShape(
+        node,
+        (bpmnShape, nodeBounds) -> {
+          if (node instanceof SubProcess) {
+            bpmnShape.setExpanded(true);
+            nodeBounds.setWidth(350);
+            nodeBounds.setHeight(200);
+          } else if (node instanceof Activity) {
+            nodeBounds.setWidth(100);
+            nodeBounds.setHeight(80);
+          } else if (node instanceof Event) {
+            nodeBounds.setWidth(36);
+            nodeBounds.setHeight(36);
+          } else if (node instanceof Gateway) {
+            nodeBounds.setWidth(50);
+            nodeBounds.setHeight(50);
+            if (node instanceof ExclusiveGateway) {
+              bpmnShape.setMarkerVisible(true);
+            }
+          }
+
+          nodeBounds.setX(0);
+          nodeBounds.setY(0);
+        });
+  }
+
+  public BpmnShape createBpmnShape(
+      final FlowNode node, BiConsumer<BpmnShape, Bounds> bpmnShapeTransformer) {
     final BpmnPlane bpmnPlane = findBpmnPlane();
     if (bpmnPlane != null) {
       final BpmnShape bpmnShape = createInstance(BpmnShape.class);
       bpmnShape.setBpmnElement(node);
       final Bounds nodeBounds = createInstance(Bounds.class);
 
-      if (node instanceof SubProcess) {
-        bpmnShape.setExpanded(true);
-        nodeBounds.setWidth(350);
-        nodeBounds.setHeight(200);
-      } else if (node instanceof Activity) {
-        nodeBounds.setWidth(100);
-        nodeBounds.setHeight(80);
-      } else if (node instanceof Event) {
-        nodeBounds.setWidth(36);
-        nodeBounds.setHeight(36);
-      } else if (node instanceof Gateway) {
-        nodeBounds.setWidth(50);
-        nodeBounds.setHeight(50);
-        if (node instanceof ExclusiveGateway) {
-          bpmnShape.setMarkerVisible(true);
-        }
+      if (bpmnShapeTransformer != null) {
+        bpmnShapeTransformer.accept(bpmnShape, nodeBounds);
       }
-
-      nodeBounds.setX(0);
-      nodeBounds.setY(0);
 
       bpmnShape.addChildElement(nodeBounds);
       bpmnPlane.addChildElement(bpmnShape);
@@ -352,8 +379,21 @@ public abstract class AbstractBaseElementBuilder<
     return null;
   }
 
-  protected void setCoordinates(final BpmnShape shape) {
-    final BpmnShape source = findBpmnShape(element);
+  public B withCoordinatesTransformer(BiConsumer<BpmnShape, BpmnShape> coordinatesTransformer) {
+    this.coordinatesTransformer = coordinatesTransformer;
+    return myself;
+  }
+
+  protected void setCoordinates(final BpmnShape bpmnShape) {
+    if (coordinatesTransformer != null) {
+      setCoordinates(bpmnShape, coordinatesTransformer);
+      coordinatesTransformer = null;
+    } else {
+      setCoordinates(bpmnShape, this::defaultTransformCoordinates);
+    }
+  }
+
+  protected void defaultTransformCoordinates(BpmnShape source, BpmnShape shape) {
     final Bounds shapeBounds = shape.getBounds();
 
     double x = 0;
@@ -364,7 +404,7 @@ public abstract class AbstractBaseElementBuilder<
 
       final double sourceX = sourceBounds.getX();
       final double sourceWidth = sourceBounds.getWidth();
-      x = sourceX + sourceWidth + SPACE;
+      x = sourceX + sourceWidth + defaultSpace;
 
       if (element instanceof FlowNode) {
         final FlowNode flowNode = (FlowNode) element;
@@ -374,6 +414,14 @@ public abstract class AbstractBaseElementBuilder<
 
     shapeBounds.setX(x);
     shapeBounds.setY(y);
+  }
+
+  protected void setCoordinates(
+      final BpmnShape shape, BiConsumer<BpmnShape, BpmnShape> coordinatesTransformer) {
+    final BpmnShape source = findBpmnShape(element);
+    if (coordinatesTransformer != null) {
+      coordinatesTransformer.accept(source, shape);
+    }
   }
 
   /** @deprecated use {@link #createEdge(BaseElement)} instead */
@@ -420,51 +468,70 @@ public abstract class AbstractBaseElementBuilder<
     setWaypointsWithSourceAndTarget(edge, edgeSource, edgeTarget);
   }
 
+  public B withWaypointEdgeBuilder(WaypointEdgeBuilder waypointEdgeBuilder) {
+    this.waypointEdgeBuilder = waypointEdgeBuilder;
+    return myself;
+  }
+
   protected void setWaypointsWithSourceAndTarget(
       final BpmnEdge edge, final FlowNode edgeSource, final FlowNode edgeTarget) {
     final BpmnShape source = findBpmnShape(edgeSource);
     final BpmnShape target = findBpmnShape(edgeTarget);
 
     if (source != null && target != null) {
-
-      final Bounds sourceBounds = source.getBounds();
-      final Bounds targetBounds = target.getBounds();
-
-      final double sourceX = sourceBounds.getX();
-      final double sourceY = sourceBounds.getY();
-      final double sourceWidth = sourceBounds.getWidth();
-      final double sourceHeight = sourceBounds.getHeight();
-
-      final double targetX = targetBounds.getX();
-      final double targetY = targetBounds.getY();
-      final double targetHeight = targetBounds.getHeight();
-
-      final Waypoint w1 = createInstance(Waypoint.class);
-
-      if (edgeSource.getOutgoing().size() == 1) {
-        w1.setX(sourceX + sourceWidth);
-        w1.setY(sourceY + sourceHeight / 2);
-
-        edge.addChildElement(w1);
+      final Supplier<Waypoint> waypointSupplier = () -> createInstance(Waypoint.class);
+      if (waypointEdgeBuilder != null) {
+        waypointEdgeBuilder.build(edge, edgeSource, waypointSupplier, source, target);
+        waypointEdgeBuilder = null;
       } else {
-        w1.setX(sourceX + sourceWidth / 2);
-        w1.setY(sourceY + sourceHeight);
-
-        edge.addChildElement(w1);
-
-        final Waypoint w2 = createInstance(Waypoint.class);
-        w2.setX(sourceX + sourceWidth / 2);
-        w2.setY(targetY + targetHeight / 2);
-
-        edge.addChildElement(w2);
+        defaultWaypointEdgeBuilder(edge, edgeSource, waypointSupplier, source, target);
       }
-
-      final Waypoint w3 = createInstance(Waypoint.class);
-      w3.setX(targetX);
-      w3.setY(targetY + targetHeight / 2);
-
-      edge.addChildElement(w3);
     }
+  }
+
+  protected void defaultWaypointEdgeBuilder(
+      BpmnEdge edge,
+      FlowNode edgeSource,
+      Supplier<Waypoint> waypointSupplier,
+      BpmnShape source,
+      BpmnShape target) {
+    final Bounds sourceBounds = source.getBounds();
+    final Bounds targetBounds = target.getBounds();
+
+    final double sourceX = sourceBounds.getX();
+    final double sourceY = sourceBounds.getY();
+    final double sourceWidth = sourceBounds.getWidth();
+    final double sourceHeight = sourceBounds.getHeight();
+
+    final double targetX = targetBounds.getX();
+    final double targetY = targetBounds.getY();
+    final double targetHeight = targetBounds.getHeight();
+
+    final Waypoint w1 = waypointSupplier.get();
+
+    if (edgeSource.getOutgoing().size() == 1) {
+      w1.setX(sourceX + sourceWidth);
+      w1.setY(sourceY + sourceHeight / 2);
+
+      edge.addChildElement(w1);
+    } else {
+      w1.setX(sourceX + sourceWidth / 2);
+      w1.setY(sourceY + sourceHeight);
+
+      edge.addChildElement(w1);
+
+      final Waypoint w2 = waypointSupplier.get();
+      w2.setX(sourceX + sourceWidth / 2);
+      w2.setY(targetY + targetHeight / 2);
+
+      edge.addChildElement(w2);
+    }
+
+    final Waypoint w3 = waypointSupplier.get();
+    w3.setX(targetX);
+    w3.setY(targetY + targetHeight / 2);
+
+    edge.addChildElement(w3);
   }
 
   protected BpmnPlane findBpmnPlane() {
@@ -522,12 +589,12 @@ public abstract class AbstractBaseElementBuilder<
         final double subProcessX = subProcessBounds.getX();
         final double subProcessWidth = subProcessBounds.getWidth();
 
-        final double tmpWidth = innerX + innerWidth + SPACE;
-        final double tmpHeight = innerY + innerHeight + SPACE;
+        final double tmpWidth = innerX + innerWidth + defaultSpace;
+        final double tmpHeight = innerY + innerHeight + defaultSpace;
 
         if (innerY == subProcessY) {
-          subProcessBounds.setY(subProcessY - SPACE);
-          subProcessBounds.setHeight(subProcessHeight + SPACE);
+          subProcessBounds.setY(subProcessY - defaultSpace);
+          subProcessBounds.setHeight(subProcessHeight + defaultSpace);
         }
 
         if (tmpWidth >= subProcessX + subProcessWidth) {
@@ -568,10 +635,21 @@ public abstract class AbstractBaseElementBuilder<
         final Bounds targetBounds = targetShape.getBounds();
         final double lastY = targetBounds.getY();
         final double lastHeight = targetBounds.getHeight();
-        y = lastY + lastHeight + SPACE;
+        y = lastY + lastHeight + defaultSpace;
       }
     }
 
     return y;
+  }
+
+  @FunctionalInterface
+  public interface WaypointEdgeBuilder {
+
+    void build(
+        BpmnEdge edge,
+        FlowNode edgeSource,
+        Supplier<Waypoint> waypointSupplier,
+        BpmnShape source,
+        BpmnShape target);
   }
 }

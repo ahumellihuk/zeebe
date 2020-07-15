@@ -28,12 +28,14 @@ import io.zeebe.model.bpmn.instance.zeebe.ZeebeOutput;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 /** @author Sebastian Menski */
 public abstract class AbstractActivityBuilder<
         B extends AbstractActivityBuilder<B, E>, E extends Activity>
     extends AbstractFlowNodeBuilder<B, E> implements ZeebeVariablesMappingBuilder<B> {
+  private BiConsumer<BpmnShape, BpmnShape> boundaryCoordinatesTransformer;
 
   protected AbstractActivityBuilder(
       final BpmnModelInstance modelInstance, final E element, final Class<?> selfType) {
@@ -121,24 +123,45 @@ public abstract class AbstractActivityBuilder<
     return x;
   }
 
+  public B withBoundaryCoordinatesTransformer(
+      BiConsumer<BpmnShape, BpmnShape> boundaryCoordinatesTransformer) {
+    this.boundaryCoordinatesTransformer = boundaryCoordinatesTransformer;
+    return myself;
+  }
+
   protected void setBoundaryEventCoordinates(final BpmnShape bpmnShape) {
-    final BpmnShape activity = findBpmnShape(element);
-    final Bounds boundaryBounds = bpmnShape.getBounds();
+    if (boundaryCoordinatesTransformer != null) {
+      setBoundaryEventCoordinates(bpmnShape, boundaryCoordinatesTransformer);
+      boundaryCoordinatesTransformer = null;
+    } else {
+      setBoundaryEventCoordinates(
+          bpmnShape,
+          (activity, shape) -> {
+            final Bounds boundaryBounds = shape.getBounds();
+            double x = 0;
+            double y = 0;
 
-    double x = 0;
-    double y = 0;
+            if (activity != null) {
+              final Bounds activityBounds = activity.getBounds();
+              final double activityY = activityBounds.getY();
+              final double activityHeight = activityBounds.getHeight();
+              final double boundaryHeight = boundaryBounds.getHeight();
+              x = calculateXCoordinate(boundaryBounds);
+              y = activityY + activityHeight - boundaryHeight / 2;
+            }
 
-    if (activity != null) {
-      final Bounds activityBounds = activity.getBounds();
-      final double activityY = activityBounds.getY();
-      final double activityHeight = activityBounds.getHeight();
-      final double boundaryHeight = boundaryBounds.getHeight();
-      x = calculateXCoordinate(boundaryBounds);
-      y = activityY + activityHeight - boundaryHeight / 2;
+            boundaryBounds.setX(x);
+            boundaryBounds.setY(y);
+          });
     }
+  }
 
-    boundaryBounds.setX(x);
-    boundaryBounds.setY(y);
+  protected void setBoundaryEventCoordinates(
+      final BpmnShape bpmnShape, BiConsumer<BpmnShape, BpmnShape> boundsTransformer) {
+    final BpmnShape activity = findBpmnShape(element);
+    if (boundsTransformer != null) {
+      boundsTransformer.accept(activity, bpmnShape);
+    }
   }
 
   @Override
